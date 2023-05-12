@@ -1,0 +1,4 @@
+
+[build]
+dist = "graph_editor/dist"
+filehash = false

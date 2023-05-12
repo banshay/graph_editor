@@ -1,0 +1,11 @@
+{
+  "name": "@banshay/graph-editor",
+  "version": "0.0.4",
+  "description": "Graph Editor for wzrd files",
+  "main": "graph_editor.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Lukas Bopp",
+  "license": "MIT"
+}
