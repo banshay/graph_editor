@@ -1,6 +1,6 @@
-use eframe::egui::{self, Context, DragValue, TextStyle, Ui};
-use eframe::epaint::{ahash::HashMap, Color32};
-use eframe::{epaint, Frame, Storage};
+use eframe::egui::{self, Context, DragValue, Key, TextStyle, Ui};
+use eframe::epaint::{ahash::HashMap};
+use eframe::{Frame, Storage};
 use egui_node_graph::*;
 use std::any::Any;
 use std::borrow::Cow;
@@ -55,13 +55,13 @@ type WzrdGraph = Graph<WzrdNodeData, WzrdNodeDataType, WzrdValueType>;
 pub enum WzrdResponse {}
 
 impl DataTypeTrait<WzrdGraphState> for WzrdNodeDataType {
-    fn data_type_color(&self, user_state: &mut WzrdGraphState) -> epaint::color::Color32 {
+    fn data_type_color(&self, user_state: &mut WzrdGraphState) -> ecolor::Color32 {
         match self {
-            WzrdNodeDataType::Object => egui::Color32::from_rgb(255, 0, 0),
-            WzrdNodeDataType::String => egui::Color32::from_rgb(255, 0, 255),
-            WzrdNodeDataType::Function => egui::Color32::from_rgb(0, 0, 255),
-            WzrdNodeDataType::Number => Color32::from_rgb(0, 0, 255),
-            WzrdNodeDataType::Any => Color32::from_rgb(255, 255, 255),
+            WzrdNodeDataType::Object => ecolor::Color32::from_rgb(255, 0, 0),
+            WzrdNodeDataType::String => ecolor::Color32::from_rgb(255, 0, 255),
+            WzrdNodeDataType::Function => ecolor::Color32::from_rgb(0, 0, 255),
+            WzrdNodeDataType::Number => ecolor::Color32::from_rgb(0, 0, 255),
+            WzrdNodeDataType::Any => ecolor::Color32::from_rgb(255, 255, 255),
         }
     }
 
@@ -161,6 +161,7 @@ impl NodeTemplateTrait for WzrdNodeTemplate {
 }
 
 pub struct AllWzrdNodeTemplates;
+
 impl NodeTemplateIter for AllWzrdNodeTemplates {
     type Item = WzrdNodeTemplate;
 
@@ -208,6 +209,7 @@ impl WidgetValueTrait for WzrdValueType {
 }
 
 impl UserResponseTrait for WzrdResponse {}
+
 impl NodeDataTrait for WzrdNodeData {
     type Response = WzrdResponse;
     type UserState = WzrdGraphState;
@@ -221,12 +223,16 @@ impl NodeDataTrait for WzrdNodeData {
         graph: &Graph<Self, Self::DataType, Self::ValueType>,
         user_state: &mut Self::UserState,
     ) -> Vec<NodeResponse<Self::Response, Self>>
-    where
-        WzrdResponse: UserResponseTrait,
+        where
+            WzrdResponse: UserResponseTrait,
     {
         let mut responses = vec![];
 
         responses
+    }
+
+    fn can_delete(&self, _node_id: NodeId, _graph: &Graph<Self, Self::DataType, Self::ValueType>, _user_state: &mut Self::UserState) -> bool {
+        false
     }
 }
 
@@ -281,6 +287,14 @@ impl eframe::App for WzrdNodeGraph {
                     .draw_graph_editor(ui, AllWzrdNodeTemplates, &mut self.user_state)
             })
             .inner;
+
+        ctx.input(|i| {
+            if(i.key_released(Key::Delete)){
+                for node_id in self.state.selected_nodes {
+                    self.state.graph.remove_node(*node_id);
+                }
+            }
+        })
 
         // for node_response in graph_response.node_responses {
         //     if let NodeResponse::User(user_event) = node_response {

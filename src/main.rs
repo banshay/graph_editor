@@ -20,7 +20,7 @@ fn main() {
             #[cfg(not(feature = "persistence"))]
             Box::new(WzrdNodeGraph::default())
         }),
-    )
+    );
 }
 
 #[cfg(target_arch = "wasm32")]
