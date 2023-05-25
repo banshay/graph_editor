@@ -1,10 +1,12 @@
-use crate::app::WzrdNodeGraph;
 use eframe::egui::Visuals;
+
+use crate::app::wzrd_node_graph::WzrdNodeGraph;
 
 mod app;
 
 #[cfg(not(target_arch = "wasm32"))]
 fn main() {
+    env_logger::init();
     use eframe::egui::Visuals;
 
     eframe::run_native(
@@ -20,7 +22,8 @@ fn main() {
             #[cfg(not(feature = "persistence"))]
             Box::new(WzrdNodeGraph::default())
         }),
-    );
+    )
+    .unwrap();
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -36,7 +39,7 @@ fn main() {
             web_options,
             Box::new(|cc| Box::new(WzrdNodeGraph::new(cc))),
         )
-        // .await
+        .await
         .expect("failed to start eframe");
     });
 }

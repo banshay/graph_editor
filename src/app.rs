@@ -1,58 +1,36 @@
-use eframe::egui::{self, Context, DragValue, Key, TextStyle, Ui};
-use eframe::epaint::{ahash::HashMap};
-use eframe::{Frame, Storage};
-use egui_node_graph::*;
-use std::any::Any;
 use std::borrow::Cow;
+use std::cmp::Ordering;
+use std::collections::HashMap;
+use std::ops::Deref;
 
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
-pub struct WzrdNodeData {
-    template: WzrdNodeTemplate,
-}
+use eframe::egui::{self, Context, DragValue, Key, Ui};
+use eframe::{Frame, Storage};
+use instant::Instant;
+use log::info;
 
-#[derive(PartialEq, Eq)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
-pub enum WzrdNodeDataType {
-    Object,
-    String,
-    Function,
-    Number,
-    Any,
-}
+use egui_node_graph::*;
 
-#[derive(Clone, Debug)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
-pub enum WzrdValueType {
-    Scalar { value: f64 },
-    // Object { value: Option<dyn Any> },
-    String { value: String },
-    Integer { value: i64 },
-    Float { value: f64 },
+use crate::app::node::structs::*;
+use crate::app::wzrd_node_graph::*;
+
+mod node;
+pub mod wzrd_node_graph;
+
+#[cfg(target_arch = "wasm32")]
+use eframe::wasm_bindgen::{self, prelude::*};
+
+#[wasm_bindgen]
+#[cfg(target_arch = "wasm32")]
+extern "C" {
+    #[wasm_bindgen(js_name = "updateDocument")]
+    pub fn update_document(document: &str);
 }
 
 impl Default for WzrdValueType {
     fn default() -> Self {
-        Self::Scalar { value: 0.0 }
+        Self::Float { value: 0.0 }
     }
 }
-
-#[derive(Copy, Clone)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
-pub enum WzrdNodeTemplate {
-    Addition,
-    Integer,
-    Float,
-    Output,
-}
-
-#[derive(Default)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
-pub struct WzrdGraphState {}
-
-type WzrdGraph = Graph<WzrdNodeData, WzrdNodeDataType, WzrdValueType>;
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum WzrdResponse {}
 
 impl DataTypeTrait<WzrdGraphState> for WzrdNodeDataType {
     fn data_type_color(&self, user_state: &mut WzrdGraphState) -> ecolor::Color32 {
@@ -61,7 +39,8 @@ impl DataTypeTrait<WzrdGraphState> for WzrdNodeDataType {
             WzrdNodeDataType::String => ecolor::Color32::from_rgb(255, 0, 255),
             WzrdNodeDataType::Function => ecolor::Color32::from_rgb(0, 0, 255),
             WzrdNodeDataType::Number => ecolor::Color32::from_rgb(0, 0, 255),
-            WzrdNodeDataType::Any => ecolor::Color32::from_rgb(255, 255, 255),
+            WzrdNodeDataType::Expression => ecolor::Color32::from_rgb(0, 0, 255),
+            WzrdNodeDataType::Literal => ecolor::Color32::from_rgb(0, 0, 255),
         }
     }
 
@@ -71,31 +50,30 @@ impl DataTypeTrait<WzrdGraphState> for WzrdNodeDataType {
             WzrdNodeDataType::String => Cow::Borrowed("string"),
             WzrdNodeDataType::Function => Cow::Borrowed("function"),
             WzrdNodeDataType::Number => Cow::Borrowed("number"),
-            WzrdNodeDataType::Any => Cow::Borrowed("any"),
+            WzrdNodeDataType::Expression => Cow::Borrowed("number"),
+            WzrdNodeDataType::Literal => Cow::Borrowed("number"),
         }
     }
 }
 
-impl NodeTemplateTrait for WzrdNodeTemplate {
+impl NodeTemplateTrait for WzrdNode {
     type NodeData = WzrdNodeData;
     type DataType = WzrdNodeDataType;
     type ValueType = WzrdValueType;
     type UserState = WzrdGraphState;
 
     fn node_finder_label(&self, user_state: &mut Self::UserState) -> Cow<str> {
-        Cow::Borrowed(match self {
-            WzrdNodeTemplate::Addition => "Add",
-            WzrdNodeTemplate::Integer => "Integer",
-            WzrdNodeTemplate::Float => "Float",
-            WzrdNodeTemplate::Output => "Output",
-        })
+        Cow::Borrowed(&self.label)
     }
+
     fn node_graph_label(&self, user_state: &mut Self::UserState) -> String {
         self.node_finder_label(user_state).into()
     }
 
     fn user_data(&self, user_state: &mut Self::UserState) -> Self::NodeData {
-        WzrdNodeData { template: *self }
+        WzrdNodeData {
+            template: self.clone(),
+        }
     }
 
     fn build_node(
@@ -104,74 +82,20 @@ impl NodeTemplateTrait for WzrdNodeTemplate {
         user_state: &mut Self::UserState,
         node_id: NodeId,
     ) {
-        let input_number = |graph: &mut WzrdGraph, name: &str| {
+        for input in self.inputs.clone() {
             graph.add_input_param(
                 node_id,
-                name.to_string(),
-                WzrdNodeDataType::Number,
+                input.name,
+                input.data_type,
                 WzrdValueType::Integer { value: 0 },
-                InputParamKind::ConnectionOrConstant,
+                InputParamKind::ConnectionOnly,
                 true,
             );
-        };
-
-        let output_number = |graph: &mut WzrdGraph, name: &str| {
-            graph.add_output_param(node_id, name.to_string(), WzrdNodeDataType::Number);
-        };
-
-        let input_constant = |graph: &mut WzrdGraph, name: &str, default_value: WzrdValueType| {
-            graph.add_input_param(
-                node_id,
-                "value".to_string(),
-                WzrdNodeDataType::Number,
-                default_value,
-                InputParamKind::ConstantOnly,
-                true,
-            );
-        };
-
-        match self {
-            WzrdNodeTemplate::Addition => {
-                input_number(graph, "param1");
-                input_number(graph, "param2");
-                output_number(graph, "");
-            }
-            WzrdNodeTemplate::Integer => {
-                input_constant(graph, "value", WzrdValueType::Integer { value: 0 });
-                output_number(graph, "");
-            }
-            WzrdNodeTemplate::Float => {
-                input_constant(graph, "value", WzrdValueType::Float { value: 0.0 });
-                output_number(graph, "");
-            }
-            WzrdNodeTemplate::Output => {
-                graph.add_input_param(
-                    node_id,
-                    "".to_string(),
-                    WzrdNodeDataType::Any,
-                    WzrdValueType::String {
-                        value: "".to_string(),
-                    },
-                    InputParamKind::ConnectionOnly,
-                    true,
-                );
-            }
         }
-    }
-}
 
-pub struct AllWzrdNodeTemplates;
-
-impl NodeTemplateIter for AllWzrdNodeTemplates {
-    type Item = WzrdNodeTemplate;
-
-    fn all_kinds(&self) -> Vec<Self::Item> {
-        vec![
-            WzrdNodeTemplate::Addition,
-            WzrdNodeTemplate::Integer,
-            WzrdNodeTemplate::Float,
-            WzrdNodeTemplate::Output,
-        ]
+        for output in self.outputs.clone() {
+            graph.add_output_param(node_id, output.name, output.data_type);
+        }
     }
 }
 
@@ -201,6 +125,9 @@ impl WidgetValueTrait for WzrdValueType {
                     ui.add(DragValue::new(value));
                 });
             }
+            WzrdValueType::String { value } => {
+                ui.label(param_name);
+            }
             _ => {}
         }
 
@@ -223,51 +150,53 @@ impl NodeDataTrait for WzrdNodeData {
         graph: &Graph<Self, Self::DataType, Self::ValueType>,
         user_state: &mut Self::UserState,
     ) -> Vec<NodeResponse<Self::Response, Self>>
-        where
-            WzrdResponse: UserResponseTrait,
+    where
+        WzrdResponse: UserResponseTrait,
     {
         let mut responses = vec![];
 
         responses
     }
 
-    fn can_delete(&self, _node_id: NodeId, _graph: &Graph<Self, Self::DataType, Self::ValueType>, _user_state: &mut Self::UserState) -> bool {
+    fn top_bar_ui(
+        &self,
+        ui: &mut Ui,
+        node_id: NodeId,
+        graph: &Graph<Self, Self::DataType, Self::ValueType>,
+        user_state: &mut Self::UserState,
+    ) -> Vec<NodeResponse<Self::Response, Self>>
+    where
+        Self::Response: UserResponseTrait,
+    {
+        vec![]
+    }
+
+    fn output_ui(
+        &self,
+        ui: &mut Ui,
+        _node_id: NodeId,
+        _graph: &Graph<Self, Self::DataType, Self::ValueType>,
+        _user_state: &mut Self::UserState,
+        param_name: &str,
+    ) -> Vec<NodeResponse<Self::Response, Self>>
+    where
+        Self::Response: UserResponseTrait,
+    {
+        ui.label(param_name);
+        vec![]
+    }
+
+    fn can_delete(
+        &self,
+        _node_id: NodeId,
+        _graph: &Graph<Self, Self::DataType, Self::ValueType>,
+        _user_state: &mut Self::UserState,
+    ) -> bool {
         false
     }
 }
 
-type WzrdEditorState = GraphEditorState<
-    WzrdNodeData,
-    WzrdNodeDataType,
-    WzrdValueType,
-    WzrdNodeTemplate,
-    WzrdGraphState,
->;
-
-#[derive(Default)]
-pub struct WzrdNodeGraph {
-    state: WzrdEditorState,
-    user_state: WzrdGraphState,
-}
-
-#[cfg(feature = "persistence")]
-const PERSISTENCE_KEY: &str = "egui_node_graph";
-
-#[cfg(feature = "persistence")]
-impl WzrdNodeGraph {
-    pub fn new(creation_context: &eframe::CreationContext<'_>) -> Self {
-        let state = creation_context
-            .storage
-            .and_then(|storage| eframe::get_value(storage, PERSISTENCE_KEY))
-            .unwrap_or_default();
-
-        Self {
-            state,
-            user_state: WzrdGraphState::default(),
-        }
-    }
-}
-
+const EXTERNAL_UPDATE_COOLDOWN_MS: u128 = 1000;
 impl eframe::App for WzrdNodeGraph {
     #[cfg(feature = "persistence")]
     fn save(&mut self, _storage: &mut dyn Storage) {
@@ -281,26 +210,80 @@ impl eframe::App for WzrdNodeGraph {
             })
         });
 
-        let graph_response = egui::CentralPanel::default()
+        let graph_response: WzrdGraphResponse = egui::CentralPanel::default()
             .show(ctx, |ui| {
                 self.state
-                    .draw_graph_editor(ui, AllWzrdNodeTemplates, &mut self.user_state)
+                    .draw_graph_editor(ui, self.node_templates.clone(), &mut self.user_state)
             })
             .inner;
 
         ctx.input(|i| {
-            if(i.key_released(Key::Delete)){
-                for node_id in self.state.selected_nodes {
-                    self.state.graph.remove_node(*node_id);
+            if i.key_released(Key::Delete) {
+                for node_id in self.state.selected_nodes.iter() {
+                    let (node, disc_events) = self.state.graph.remove_node(*node_id);
+                    // Pass the disconnection responses first so user code can perform cleanup
+                    // before node removal response.
+                    self.state.node_positions.remove(*node_id);
+                    // Make sure to not leave references to old nodes hanging
+                    self.state.node_order.retain(|id| *id != *node_id);
                 }
             }
-        })
+        });
 
-        // for node_response in graph_response.node_responses {
-        //     if let NodeResponse::User(user_event) = node_response {
-        //         match user_event {
-        //         }
-        //     }
-        // }
+        ctx.input(|i| {
+            if i.key_released(Key::G) {
+                self.node_templates.0.push(WzrdNode {
+                    template: None,
+                    label: "GPress".into(),
+                    inputs: vec![WzrdType {
+                        name: "value".into(),
+                        data_type: WzrdNodeDataType::Number,
+                    }],
+                    outputs: vec![WzrdType {
+                        name: "out".into(),
+                        data_type: WzrdNodeDataType::Number,
+                    }],
+                })
+            }
+        });
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            fn call_external_update(graph: &mut WzrdNodeGraph) {
+                let mut cache: NodeCache = HashMap::new();
+                let graph = graph.evaluate_graph(&mut cache);
+                update_document(&graph);
+            }
+
+            if graph_response.node_responses.len() > 0 || self.last_event.is_none() {
+                self.last_event = Some(Instant::now());
+            }
+
+            if let (Some(last_update), Some(last_event_instant)) =
+                (self.last_update, self.last_event)
+            {
+                let duration_since_last_update_ms =
+                    Instant::now().duration_since(last_update).as_millis();
+                match (
+                    duration_since_last_update_ms.cmp(&EXTERNAL_UPDATE_COOLDOWN_MS),
+                    last_event_instant.cmp(&last_update),
+                ) {
+                    (Ordering::Greater, Ordering::Greater) => {
+                        info!(
+                            "proper case: graph_responses size: {:}, duration since {:}",
+                            graph_response.node_responses.len(),
+                            duration_since_last_update_ms
+                        );
+                        self.last_update = Some(Instant::now());
+
+                        call_external_update(self);
+                    }
+                    _ => {}
+                };
+            } else {
+                self.last_update = Some(Instant::now());
+                // call_external_update(self);
+            }
+        }
     }
 }
