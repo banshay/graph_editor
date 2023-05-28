@@ -1,6 +1,9 @@
 pub mod structs;
 
 use egui_node_graph::NodeTemplateIter;
+use enum_iterator::{all, Sequence};
+use lazy_static::lazy_static;
+use std::collections::HashMap;
 use structs::*;
 
 impl WzrdNodeTemplates {
@@ -30,27 +33,99 @@ impl NodeTemplateIter for WzrdNodeTemplates {
     }
 }
 
+#[derive(Eq, Hash, PartialEq, Sequence, Clone)]
+pub enum WzrdNodes {
+    Constant,
+    Add,
+    Multiply,
+}
+
+lazy_static! {
+    static ref NODE_MAP: HashMap<WzrdNodes, WzrdNode> = all::<WzrdNodes>()
+        .map(|node_enum| (node_enum.clone(), node_enum.new()))
+        .collect();
+    static ref NODE_LABEL_MAP: HashMap<String, WzrdNode> = all::<WzrdNodes>()
+        .map(|node_enum| node_enum.new())
+        .map(|node| (node.label.clone(), node))
+        .collect();
+}
+
+impl WzrdNodes {
+    pub fn node(&self) -> WzrdNode {
+        NODE_MAP[self].clone()
+    }
+
+    pub fn find_node(label: &str) -> Option<WzrdNode> {
+        NODE_LABEL_MAP.get(label).map(|node| node.clone())
+    }
+
+    fn new(&self) -> WzrdNode {
+        match self {
+            WzrdNodes::Constant => WzrdNode {
+                template: None,
+                label: "Constant".into(),
+                inputs: vec![WzrdType {
+                    name: "value".into(),
+                    data_type: WzrdNodeDataType::Number,
+                    initial_value: None,
+                }],
+                outputs: vec![WzrdType {
+                    name: "out".into(),
+                    data_type: WzrdNodeDataType::Number,
+                    initial_value: None,
+                }],
+            },
+            WzrdNodes::Add => WzrdNode {
+                template: Some("($0+$1)".into()),
+                label: "+".to_string(),
+                inputs: vec![
+                    WzrdType {
+                        name: "value1".into(),
+                        data_type: WzrdNodeDataType::Number,
+                        initial_value: None,
+                    },
+                    WzrdType {
+                        name: "value2".into(),
+                        data_type: WzrdNodeDataType::Number,
+                        initial_value: None,
+                    },
+                ],
+                outputs: vec![WzrdType {
+                    name: "out".into(),
+                    data_type: WzrdNodeDataType::Number,
+                    initial_value: None,
+                }],
+            },
+            WzrdNodes::Multiply => WzrdNode {
+                template: Some("($0*$1)".into()),
+                label: "*".to_string(),
+                inputs: vec![
+                    WzrdType {
+                        name: "value1".into(),
+                        data_type: WzrdNodeDataType::Number,
+                        initial_value: None,
+                    },
+                    WzrdType {
+                        name: "value2".into(),
+                        data_type: WzrdNodeDataType::Number,
+                        initial_value: None,
+                    },
+                ],
+                outputs: vec![WzrdType {
+                    name: "out".into(),
+                    data_type: WzrdNodeDataType::Number,
+                    initial_value: None,
+                }],
+            },
+        }
+    }
+}
+
 pub fn create_std_nodes() -> Vec<WzrdNode> {
     let mut stds = vec![];
 
-    stds.push(WzrdNode {
-        template: Some("$0+$1".into()),
-        label: "Add".into(),
-        inputs: vec![
-            WzrdType {
-                name: "value1".into(),
-                data_type: WzrdNodeDataType::Number,
-            },
-            WzrdType {
-                name: "value2".into(),
-                data_type: WzrdNodeDataType::Number,
-            },
-        ],
-        outputs: vec![WzrdType {
-            name: "out".into(),
-            data_type: WzrdNodeDataType::Number,
-        }],
-    });
+    stds.push(WzrdNodes::Add.node());
+    stds.push(WzrdNodes::Multiply.node());
 
     stds
 }

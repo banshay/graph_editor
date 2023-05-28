@@ -3,14 +3,15 @@ use serde::{Deserialize, Serialize};
 #[derive(Default, Clone)]
 pub struct WzrdNodeTemplates(pub Vec<WzrdNode>);
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 #[cfg_attr(feature = "persistence", derive(Serialize, Deserialize))]
 pub struct WzrdType {
     pub name: String,
     pub data_type: WzrdNodeDataType,
+    pub initial_value: Option<WzrdValueType>
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 #[cfg_attr(feature = "persistence", derive(Serialize, Deserialize))]
 pub struct WzrdNode {
     pub template: Option<String>,
@@ -19,12 +20,13 @@ pub struct WzrdNode {
     pub outputs: Vec<WzrdType>,
 }
 
+#[derive(Clone)]
 #[cfg_attr(feature = "persistence", derive(Serialize, Deserialize))]
 pub struct WzrdNodeData {
     pub template: WzrdNode,
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "persistence", derive(Serialize, Deserialize))]
 pub enum WzrdNodeDataType {
     Object,
@@ -44,9 +46,10 @@ pub enum WzrdValueType {
     Float { value: f64 },
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 #[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
-pub struct WzrdGraphState {}
+pub struct WzrdGraphState {
+}
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum WzrdResponse {}

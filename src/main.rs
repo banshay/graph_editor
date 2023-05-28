@@ -16,7 +16,13 @@ fn main() {
             creation_context.egui_ctx.set_visuals(Visuals::dark());
             #[cfg(feature = "persistence")]
             {
-                Box::new(WzrdNodeGraph::new(creation_context))
+                let mut wzrd_graph = Box::new(WzrdNodeGraph::default());
+                let mut graph = wzrd_graph.state.graph.clone();
+                let mut user_state = wzrd_graph.user_state.clone();
+                wzrd_graph.initialize_graph(&mut graph, &mut user_state, "(48*(11+20))");
+                wzrd_graph.user_state = user_state;
+                wzrd_graph.state.graph = graph;
+                wzrd_graph
             }
 
             #[cfg(not(feature = "persistence"))]
@@ -37,7 +43,7 @@ fn main() {
         eframe::start_web(
             "WzrdGraphEditor",
             web_options,
-            Box::new(|cc| Box::new(WzrdNodeGraph::new(cc))),
+            Box::new(|cc| Box::new(WzrdNodeGraph::default())),
         )
         .await
         .expect("failed to start eframe");

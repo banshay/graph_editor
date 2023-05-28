@@ -16,6 +16,7 @@ use crate::app::wzrd_node_graph::*;
 mod node;
 pub mod wzrd_node_graph;
 
+use crate::app::node::WzrdNodes;
 #[cfg(target_arch = "wasm32")]
 use eframe::wasm_bindgen::{self, prelude::*};
 
@@ -87,7 +88,7 @@ impl NodeTemplateTrait for WzrdNode {
                 node_id,
                 input.name,
                 input.data_type,
-                WzrdValueType::Integer { value: 0 },
+                input.initial_value.unwrap_or(WzrdValueType::Integer { value: 0 }),
                 InputParamKind::ConnectionOnly,
                 true,
             );
@@ -231,19 +232,16 @@ impl eframe::App for WzrdNodeGraph {
         });
 
         ctx.input(|i| {
+            if i.key_released(Key::I) {
+                let mut cache: NodeCache = HashMap::new();
+                let graph = self.evaluate_graph(&mut cache);
+                info!("{graph}");
+            }
+        });
+
+        ctx.input(|i| {
             if i.key_released(Key::G) {
-                self.node_templates.0.push(WzrdNode {
-                    template: None,
-                    label: "GPress".into(),
-                    inputs: vec![WzrdType {
-                        name: "value".into(),
-                        data_type: WzrdNodeDataType::Number,
-                    }],
-                    outputs: vec![WzrdType {
-                        name: "out".into(),
-                        data_type: WzrdNodeDataType::Number,
-                    }],
-                })
+                self.node_templates.0.push(WzrdNodes::Constant.node())
             }
         });
 

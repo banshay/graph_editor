@@ -1,16 +1,24 @@
-use crate::app::node::create_std_nodes;
 use crate::app::node::structs::{
     WzrdGraphState, WzrdNode, WzrdNodeData, WzrdNodeDataType, WzrdNodeTemplates, WzrdResponse,
-    WzrdValueType,
+    WzrdType, WzrdValueType,
 };
+use crate::app::node::{create_std_nodes, WzrdNodes};
+use eframe::egui::Pos2;
+use eframe::glow::STENCIL_TEST;
 use egui_node_graph::{
-    Graph, GraphEditorState, GraphResponse, Node, NodeId, NodeResponse, OutputId,
+    Graph, GraphEditorState, GraphResponse, Node, NodeId, NodeResponse, NodeTemplateTrait, OutputId,
 };
 use instant::Instant;
 use lazy_static::lazy_static;
-use log::debug;
+use lib_ruby_parser::{Parser, ParserOptions, ParserResult};
+use log::{debug, info};
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
+use std::convert::identity;
+use std::env::current_exe;
+use std::ops::Deref;
+
+type RNode = lib_ruby_parser::Node;
 
 #[cfg(feature = "persistence")]
 pub const PERSISTENCE_KEY: &str = "egui_node_graph";
@@ -30,6 +38,19 @@ pub struct WzrdNodeGraph {
     pub node_templates: WzrdNodeTemplates,
     pub last_update: Option<Instant>,
     pub last_event: Option<Instant>,
+}
+
+#[derive(Debug, Clone)]
+enum ParsedValueType {
+    Int(i128),
+    String(String),
+}
+
+#[derive(Debug, Clone)]
+struct ParsedWzrdNode {
+    wzrd_node: WzrdNode,
+    value: Option<ParsedValueType>, // keep for debug purposes for now
+    inputs: Vec<ParsedWzrdNode>,
 }
 
 #[cfg(feature = "persistence")]
@@ -144,6 +165,131 @@ impl WzrdNodeGraph {
                 .unwrap_or("error while calling evaluate node".into())
         } else {
             "Could not evaluate Graph".into()
+        }
+    }
+
+    pub fn initialize_graph(
+        &mut self,
+        graph: &mut Graph<WzrdNodeData, WzrdNodeDataType, WzrdValueType>,
+        user_state: &mut WzrdGraphState,
+        code: &str,
+    ) {
+        let parser = Parser::new(code, ParserOptions::default());
+        let ParserResult {
+            ast, input, tokens, ..
+        } = parser.do_parse();
+
+        if let Some(node) = ast {
+            debug!("whole ast {node:?}");
+            let parsed_graph = self.transform_ast(node.deref());
+            debug!("Parsed graph {parsed_graph:?}");
+            if let Some(node) = parsed_graph {
+                self.build_graph(graph, user_state, &node);
+            }
+        }
+    }
+
+    fn build_graph(
+        &mut self,
+        graph: &mut Graph<WzrdNodeData, WzrdNodeDataType, WzrdValueType>,
+        user_state: &mut WzrdGraphState,
+        parsed_node: &ParsedWzrdNode,
+    ) -> Node<WzrdNodeData> {
+        let new_node = graph.add_node(
+            parsed_node.wzrd_node.label.clone(),
+            parsed_node.wzrd_node.user_data(user_state),
+            |graph, node_id| parsed_node.wzrd_node.build_node(graph, user_state, node_id),
+        );
+
+        self.state.node_order.push(new_node);
+        self.state
+            .node_positions
+            .insert(new_node, Pos2 { x: 100.0, y: 100.0 });
+
+        let input_nodes: Vec<Node<WzrdNodeData>> = parsed_node
+            .inputs
+            .iter()
+            .map(|node| self.build_graph(graph, user_state, node))
+            .collect();
+
+        let current_node: Node<WzrdNodeData> = graph.nodes[new_node].clone();
+        for (i, (_, input_id)) in current_node.inputs.iter().enumerate() {
+            if let Some(input_node) = input_nodes.get(i) {
+                if let Some((_, output_id)) = input_node.outputs.first() {
+                    graph.add_connection(*output_id, *input_id);
+                }
+            }
+        }
+
+        current_node
+    }
+
+    fn transform_ast(&self, node: &RNode) -> Option<ParsedWzrdNode> {
+        match node {
+            RNode::Begin(begin) => {
+                debug!("{{");
+                let statements: Vec<ParsedWzrdNode> = begin
+                    .statements
+                    .iter()
+                    .map(|node| self.transform_ast(node))
+                    .filter_map(identity)
+                    .collect();
+                debug!("}}");
+
+                if let Some(ret) = statements.first() {
+                    Some(ret.to_owned())
+                } else {
+                    None
+                }
+            }
+            RNode::Send(send) => {
+                if let Some(recv) = &send.recv {
+                    let receiver = self.transform_ast(recv.deref()).unwrap();
+                    let args: Vec<ParsedWzrdNode> = send
+                        .args
+                        .iter()
+                        .map(|arg| self.transform_ast(arg))
+                        .filter_map(|opt| opt)
+                        .collect();
+
+                    debug!(
+                        "{:?} {:?} args: {:?}",
+                        receiver.value, send.method_name, args,
+                    );
+
+                    if let Some(wzrd_node) = WzrdNodes::find_node(&send.method_name) {
+                        let mut inputs = vec![receiver];
+                        inputs.append(&mut args.clone());
+
+                        Some(ParsedWzrdNode {
+                            wzrd_node,
+                            value: None,
+                            inputs,
+                        })
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            }
+            RNode::Int(int) => {
+                let mut template = WzrdNodes::Constant.node();
+                //is it bad to assume a constant has one input?
+                if let Some(input) = template.inputs.first() {
+                    let mut cloned = input.clone();
+                    cloned.initial_value = Some(WzrdValueType::Integer {
+                        value: int.value.parse().unwrap_or(0),
+                    });
+                    template.inputs = vec![cloned];
+                }
+                Some(ParsedWzrdNode {
+                    wzrd_node: template,
+                    inputs: vec![],
+                    value: Some(ParsedValueType::Int(int.value.parse().unwrap_or(0))),
+                })
+            }
+            _ => None,
         }
     }
 }
