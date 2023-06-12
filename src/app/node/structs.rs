@@ -8,7 +8,7 @@ pub struct WzrdNodeTemplates(pub Vec<WzrdNode>);
 pub struct WzrdType {
     pub name: String,
     pub data_type: WzrdNodeDataType,
-    pub initial_value: Option<WzrdValueType>
+    pub initial_value: Option<WzrdValueType>,
 }
 
 #[derive(Clone, Debug)]
@@ -29,12 +29,8 @@ pub struct WzrdNodeData {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "persistence", derive(Serialize, Deserialize))]
 pub enum WzrdNodeDataType {
-    Object,
-    String,
-    Function,
     Number,
-    Expression,
-    Literal,
+    Any,
 }
 
 #[derive(Clone, Debug)]
@@ -48,8 +44,13 @@ pub enum WzrdValueType {
 
 #[derive(Default, Clone)]
 #[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
-pub struct WzrdGraphState {
-}
+pub struct WzrdGraphState {}
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum WzrdResponse {}
+
+#[derive(Clone, Debug)]
+pub struct WzrdFunction {
+    pub name: String,
+    pub arguments: Vec<String>,
+}

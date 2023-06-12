@@ -36,23 +36,15 @@ impl Default for WzrdValueType {
 impl DataTypeTrait<WzrdGraphState> for WzrdNodeDataType {
     fn data_type_color(&self, user_state: &mut WzrdGraphState) -> ecolor::Color32 {
         match self {
-            WzrdNodeDataType::Object => ecolor::Color32::from_rgb(255, 0, 0),
-            WzrdNodeDataType::String => ecolor::Color32::from_rgb(255, 0, 255),
-            WzrdNodeDataType::Function => ecolor::Color32::from_rgb(0, 0, 255),
             WzrdNodeDataType::Number => ecolor::Color32::from_rgb(0, 0, 255),
-            WzrdNodeDataType::Expression => ecolor::Color32::from_rgb(0, 0, 255),
-            WzrdNodeDataType::Literal => ecolor::Color32::from_rgb(0, 0, 255),
+            WzrdNodeDataType::Any => ecolor::Color32::from_rgb(205, 205, 205),
         }
     }
 
     fn name(&self) -> Cow<str> {
         match self {
-            WzrdNodeDataType::Object => Cow::Borrowed("object"),
-            WzrdNodeDataType::String => Cow::Borrowed("string"),
-            WzrdNodeDataType::Function => Cow::Borrowed("function"),
             WzrdNodeDataType::Number => Cow::Borrowed("number"),
-            WzrdNodeDataType::Expression => Cow::Borrowed("number"),
-            WzrdNodeDataType::Literal => Cow::Borrowed("number"),
+            WzrdNodeDataType::Any => Cow::Borrowed("any"),
         }
     }
 }
@@ -88,7 +80,9 @@ impl NodeTemplateTrait for WzrdNode {
                 node_id,
                 input.name,
                 input.data_type,
-                input.initial_value.unwrap_or(WzrdValueType::Integer { value: 0 }),
+                input
+                    .initial_value
+                    .unwrap_or(WzrdValueType::Integer { value: 0 }),
                 InputParamKind::ConnectionOnly,
                 true,
             );
@@ -239,11 +233,10 @@ impl eframe::App for WzrdNodeGraph {
             }
         });
 
-        ctx.input(|i| {
-            if i.key_released(Key::G) {
-                self.node_templates.0.push(WzrdNodes::Constant.node())
-            }
-        });
+        if *self.format_requested.lock().unwrap() {
+            *self.format_requested.lock().unwrap() = false;
+            self.format_graph();
+        }
 
         #[cfg(target_arch = "wasm32")]
         {

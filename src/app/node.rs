@@ -38,6 +38,8 @@ pub enum WzrdNodes {
     Constant,
     Add,
     Multiply,
+    Output,
+    Variable,
 }
 
 lazy_static! {
@@ -66,14 +68,20 @@ impl WzrdNodes {
                 label: "Constant".into(),
                 inputs: vec![WzrdType {
                     name: "value".into(),
-                    data_type: WzrdNodeDataType::Number,
+                    data_type: WzrdNodeDataType::Any,
                     initial_value: None,
                 }],
                 outputs: vec![WzrdType {
                     name: "out".into(),
-                    data_type: WzrdNodeDataType::Number,
+                    data_type: WzrdNodeDataType::Any,
                     initial_value: None,
                 }],
+            },
+            WzrdNodes::Variable => WzrdNode {
+                template: None,
+                label: "Variable".into(),
+                inputs: vec![],
+                outputs: vec![],
             },
             WzrdNodes::Add => WzrdNode {
                 template: Some("($0+$1)".into()),
@@ -81,18 +89,18 @@ impl WzrdNodes {
                 inputs: vec![
                     WzrdType {
                         name: "value1".into(),
-                        data_type: WzrdNodeDataType::Number,
+                        data_type: WzrdNodeDataType::Any,
                         initial_value: None,
                     },
                     WzrdType {
                         name: "value2".into(),
-                        data_type: WzrdNodeDataType::Number,
+                        data_type: WzrdNodeDataType::Any,
                         initial_value: None,
                     },
                 ],
                 outputs: vec![WzrdType {
                     name: "out".into(),
-                    data_type: WzrdNodeDataType::Number,
+                    data_type: WzrdNodeDataType::Any,
                     initial_value: None,
                 }],
             },
@@ -102,20 +110,26 @@ impl WzrdNodes {
                 inputs: vec![
                     WzrdType {
                         name: "value1".into(),
-                        data_type: WzrdNodeDataType::Number,
+                        data_type: WzrdNodeDataType::Any,
                         initial_value: None,
                     },
                     WzrdType {
                         name: "value2".into(),
-                        data_type: WzrdNodeDataType::Number,
+                        data_type: WzrdNodeDataType::Any,
                         initial_value: None,
                     },
                 ],
                 outputs: vec![WzrdType {
                     name: "out".into(),
-                    data_type: WzrdNodeDataType::Number,
+                    data_type: WzrdNodeDataType::Any,
                     initial_value: None,
                 }],
+            },
+            WzrdNodes::Output => WzrdNode {
+                template: Some("return $0".into()),
+                label: "output".into(),
+                inputs: vec![],
+                outputs: vec![],
             },
         }
     }

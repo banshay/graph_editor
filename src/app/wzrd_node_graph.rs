@@ -1,22 +1,28 @@
 use crate::app::node::structs::{
-    WzrdGraphState, WzrdNode, WzrdNodeData, WzrdNodeDataType, WzrdNodeTemplates, WzrdResponse,
-    WzrdType, WzrdValueType,
+    WzrdFunction, WzrdGraphState, WzrdNode, WzrdNodeData, WzrdNodeDataType, WzrdNodeTemplates,
+    WzrdResponse, WzrdType, WzrdValueType,
 };
 use crate::app::node::{create_std_nodes, WzrdNodes};
-use eframe::egui::Pos2;
+use eframe::egui::accesskit::Role::Math;
+use eframe::egui::{pos2, vec2, Pos2, Rect};
 use eframe::glow::STENCIL_TEST;
 use egui_node_graph::{
-    Graph, GraphEditorState, GraphResponse, Node, NodeId, NodeResponse, NodeTemplateTrait, OutputId,
+    Graph, GraphEditorState, GraphResponse, Node, NodeId, NodeRects, NodeResponse,
+    NodeTemplateTrait, OutputId,
 };
 use instant::Instant;
 use lazy_static::lazy_static;
 use lib_ruby_parser::{Parser, ParserOptions, ParserResult};
 use log::{debug, info};
+use queues::{IsQueue, Queue};
 use regex::Regex;
-use std::collections::{HashMap, HashSet};
+use slotmap::SecondaryMap;
+use std::cmp::max;
+use std::collections::{HashMap, HashSet, LinkedList};
 use std::convert::identity;
 use std::env::current_exe;
-use std::ops::Deref;
+use std::ops::{Add, Deref};
+use std::sync::{Arc, Mutex};
 
 type RNode = lib_ruby_parser::Node;
 
@@ -38,6 +44,9 @@ pub struct WzrdNodeGraph {
     pub node_templates: WzrdNodeTemplates,
     pub last_update: Option<Instant>,
     pub last_event: Option<Instant>,
+    pub function_stack: LinkedList<WzrdFunction>,
+
+    pub format_requested: Arc<Mutex<bool>>,
 }
 
 #[derive(Debug, Clone)]
@@ -55,24 +64,21 @@ struct ParsedWzrdNode {
 
 #[cfg(feature = "persistence")]
 impl WzrdNodeGraph {
-    pub fn new(creation_context: &eframe::CreationContext<'_>) -> Self {
-        let state = creation_context
-            .storage
-            .and_then(|storage| eframe::get_value(storage, PERSISTENCE_KEY))
-            .unwrap_or_default();
-
+    pub fn new() -> Self {
         let standard_nodes: Vec<WzrdNode> = create_std_nodes();
 
         Self {
-            state,
+            state: WzrdEditorState::default(),
             user_state: WzrdGraphState::default(),
             node_templates: WzrdNodeTemplates(standard_nodes),
             last_update: None,
             last_event: None,
+            format_requested: Arc::new(Mutex::new(false)),
+            function_stack: LinkedList::new(),
         }
     }
 
-    pub fn evaluate_graph(&self, cache: &mut NodeCache) -> String {
+    pub fn evaluate_graph(&mut self, cache: &mut NodeCache) -> String {
         struct Evaluator<'a> {
             graph: &'a WzrdGraph,
             cache: &'a mut NodeCache,
@@ -133,12 +139,49 @@ impl WzrdNodeGraph {
                         }
                         ret
                     }
-                    None => input_values[0].clone(),
+                    None => match &node.user_data.template {
+                        WzrdNode {
+                            ref label, outputs, ..
+                        } if label == "Variable" => outputs
+                            .first()
+                            .map(|output| output.name.clone())
+                            .unwrap_or("".into()),
+                        _ => input_values[0].clone(),
+                    },
                 })
             }
         }
 
-        //find last node
+        if let Some(id) = self.find_last_node() {
+            let evaluator = Evaluator::new(&self.state.graph, cache);
+            let code_body = evaluator
+                .evaluate_node(id)
+                .unwrap_or("error while calling evaluate node".into());
+
+            if let Some(function_signature) = self.function_stack.pop_back() {
+                let arguments = function_signature.arguments.join(", ");
+                format!(
+                    "
+                    def {:}{:}
+                        {code_body}
+                    end
+                    ",
+                    function_signature.name,
+                    if arguments.is_empty() {
+                        String::from("")
+                    } else {
+                        format!("({arguments})")
+                    }
+                )
+            } else {
+                code_body
+            }
+        } else {
+            "Could not evaluate Graph".into()
+        }
+    }
+
+    pub fn find_last_node(&self) -> Option<NodeId> {
         let mut last_node_id: Option<NodeId> = None;
         for (node_id, node) in self.state.graph.nodes.iter() {
             let output_ids: Vec<&OutputId> = node
@@ -157,15 +200,7 @@ impl WzrdNodeGraph {
                 last_node_id = Some(node_id);
             }
         }
-
-        if let Some(id) = last_node_id {
-            let evaluator = Evaluator::new(&self.state.graph, cache);
-            evaluator
-                .evaluate_node(id)
-                .unwrap_or("error while calling evaluate node".into())
-        } else {
-            "Could not evaluate Graph".into()
-        }
+        last_node_id
     }
 
     pub fn initialize_graph(
@@ -224,7 +259,21 @@ impl WzrdNodeGraph {
         current_node
     }
 
-    fn transform_ast(&self, node: &RNode) -> Option<ParsedWzrdNode> {
+    fn parse_arguments(&self, node: &RNode) -> Vec<String> {
+        match node {
+            RNode::Args(args) => args
+                .args
+                .iter()
+                .flat_map(|arg| self.parse_arguments(&arg))
+                .collect(),
+            RNode::Arg(arg) => {
+                vec![arg.name.clone()]
+            }
+            _ => vec![],
+        }
+    }
+
+    fn transform_ast(&mut self, node: &RNode) -> Option<ParsedWzrdNode> {
         match node {
             RNode::Begin(begin) => {
                 debug!("{{");
@@ -236,11 +285,7 @@ impl WzrdNodeGraph {
                     .collect();
                 debug!("}}");
 
-                if let Some(ret) = statements.first() {
-                    Some(ret.to_owned())
-                } else {
-                    None
-                }
+                statements.first().map(|statement| statement.to_owned())
             }
             RNode::Send(send) => {
                 if let Some(recv) = &send.recv {
@@ -289,7 +334,154 @@ impl WzrdNodeGraph {
                     value: Some(ParsedValueType::Int(int.value.parse().unwrap_or(0))),
                 })
             }
+            RNode::Def(def) => {
+                self.function_stack.push_back(WzrdFunction {
+                    name: def.name.to_string(),
+                    arguments: def
+                        .args
+                        .clone()
+                        .map(|node| self.parse_arguments(node.deref()))
+                        .unwrap_or(vec![]),
+                });
+                if let Some(body) = &def.body {
+                    self.transform_ast(body.deref())
+                } else {
+                    None
+                }
+            }
+            RNode::Lvar(lvar) => {
+                let mut template = WzrdNodes::Variable.node();
+                template.outputs = vec![WzrdType {
+                    name: lvar.name.to_string(),
+                    data_type: WzrdNodeDataType::Any,
+                    initial_value: None,
+                }];
+
+                Some(ParsedWzrdNode {
+                    wzrd_node: template,
+                    inputs: vec![],
+                    value: None,
+                })
+            }
+            RNode::Return(ret) => {
+                let arguments: Vec<ParsedWzrdNode> = ret
+                    .args
+                    .iter()
+                    .map(|node| self.transform_ast(node))
+                    .filter_map(identity)
+                    .collect();
+
+                let mut template = WzrdNodes::Output.node();
+                template.inputs = vec![WzrdType {
+                    name: "output".to_string(),
+                    data_type: WzrdNodeDataType::Any,
+                    initial_value: None,
+                }];
+
+                Some(ParsedWzrdNode {
+                    wzrd_node: template,
+                    inputs: arguments
+                        .first()
+                        .map(|arg| vec![arg.to_owned()])
+                        .unwrap_or(vec![]),
+                    value: None,
+                })
+            }
             _ => None,
         }
+    }
+
+    pub fn format_graph(&mut self) {
+        const X_OFFSET: f32 = 50.0;
+        const Y_OFFSET: f32 = 50.0;
+
+        let mut new_positions: SecondaryMap<NodeId, Pos2> = SecondaryMap::new();
+
+        fn build_outer_rect(input_rects: Vec<Rect>) -> (f32, f32) {
+            let mut max_x = 0.0;
+            let mut sum_y = 0.0;
+            for rect in input_rects {
+                let dimension = rect.max - rect.min;
+                max_x = f32::max(max_x, dimension.x);
+                sum_y = sum_y + Y_OFFSET + dimension.y;
+            }
+            (max_x, sum_y)
+        }
+
+        fn format(
+            state: &WzrdEditorState,
+            node: &Node<WzrdNodeData>,
+            new_positions: &mut SecondaryMap<NodeId, Pos2>,
+        ) {
+            let input_rects: Vec<Rect> = node
+                .inputs
+                .iter()
+                .filter_map(|(_, input_id)| state.graph.connections.get(*input_id))
+                .map(|output_id| {
+                    let output_param = &state.graph.outputs[*output_id];
+                    state.node_rects[&output_param.node]
+                })
+                .collect();
+            let outer_rect = build_outer_rect(input_rects);
+
+            let current_node_position = new_positions[node.id];
+            let current_node_rect = state.node_rects[&node.id];
+            let current_node_baseline =
+                current_node_position.y + ((current_node_rect.max - current_node_rect.min).y / 2.0);
+
+            let first_node_y = current_node_baseline - (outer_rect.1 / 2.0);
+            let first_node_x = current_node_position.x - X_OFFSET - outer_rect.0;
+            let mut prev_node_y = first_node_y;
+
+            for input in node
+                .inputs
+                .iter()
+                .filter_map(|(_, input_id)| state.graph.connections.get(*input_id))
+                .map(|output_id| {
+                    let output_param = &state.graph.outputs[*output_id];
+                    &state.graph.nodes[output_param.node]
+                })
+                .into_iter()
+            {
+                new_positions.insert(input.id, pos2(first_node_x, prev_node_y));
+                prev_node_y = state.node_rects[&input.id].max.y + Y_OFFSET;
+            }
+        }
+
+        if let Some(last_node_id) = self.find_last_node() {
+            let last_node = &self.state.graph.nodes[last_node_id];
+            new_positions.insert(last_node_id, pos2(0.0, 0.0));
+
+            let mut queue: Queue<&Node<WzrdNodeData>> = Queue::new();
+            queue
+                .add(last_node)
+                .expect("Unable to add node to queue for formatting.");
+
+            while queue.size() > 0 {
+                if let Ok(node) = queue.remove() {
+                    format(&self.state, node, &mut new_positions);
+                    node.inputs
+                        .iter()
+                        .filter_map(|(_, input_id)| self.state.graph.connection(*input_id))
+                        .map(|output_id| {
+                            let output = &self.state.graph.outputs[output_id];
+                            &self.state.graph.nodes[output.node]
+                        })
+                        .for_each(|child_node| {
+                            queue
+                                .add(&child_node)
+                                .expect("Unable to add node to queue for formatting.");
+                        });
+                } else {
+                    break;
+                }
+            }
+        }
+
+        self.state.node_positions = new_positions;
+        self.state.pan_zoom.pan = vec2(
+            self.state.ui_rect.width() / 2.0,
+            self.state.ui_rect.height() / 2.0,
+        );
     }
 }
