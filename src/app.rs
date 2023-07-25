@@ -3,7 +3,7 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::ops::Deref;
 
-use eframe::egui::{self, Context, DragValue, Key, Ui};
+use eframe::egui::{self, Context, DragValue, Key, TextEdit, Ui};
 use eframe::{Frame, Storage};
 use instant::Instant;
 use log::info;
@@ -37,7 +37,7 @@ impl DataTypeTrait<WzrdGraphState> for WzrdNodeDataType {
     fn data_type_color(&self, user_state: &mut WzrdGraphState) -> ecolor::Color32 {
         match self {
             WzrdNodeDataType::Number => ecolor::Color32::from_rgb(0, 0, 255),
-            WzrdNodeDataType::Any => ecolor::Color32::from_rgb(205, 205, 205),
+            _ => ecolor::Color32::from_rgb(205, 205, 205),
         }
     }
 
@@ -45,6 +45,7 @@ impl DataTypeTrait<WzrdGraphState> for WzrdNodeDataType {
         match self {
             WzrdNodeDataType::Number => Cow::Borrowed("number"),
             WzrdNodeDataType::Any => Cow::Borrowed("any"),
+            _ => Cow::Borrowed("Still don't know what this does."),
         }
     }
 }
@@ -79,17 +80,15 @@ impl NodeTemplateTrait for WzrdNode {
             graph.add_input_param(
                 node_id,
                 input.name,
+                input.data_type.clone().into(),
                 input.data_type,
-                input
-                    .initial_value
-                    .unwrap_or(WzrdValueType::Integer { value: 0 }),
                 InputParamKind::ConnectionOnly,
                 true,
             );
         }
 
         for output in self.outputs.clone() {
-            graph.add_output_param(node_id, output.name, output.data_type);
+            graph.add_output_param(node_id, output.name, output.data_type.into());
         }
     }
 }
@@ -108,7 +107,7 @@ impl WidgetValueTrait for WzrdValueType {
         node_data: &Self::NodeData,
     ) -> Vec<Self::Response> {
         match self {
-            WzrdValueType::Integer { value } => {
+            WzrdValueType::Integer { value } | WzrdValueType::Number { value } => {
                 ui.label(param_name);
                 ui.horizontal(|ui| {
                     ui.add(DragValue::new(value));
@@ -120,10 +119,15 @@ impl WidgetValueTrait for WzrdValueType {
                     ui.add(DragValue::new(value));
                 });
             }
-            WzrdValueType::String { value } => {
+            WzrdValueType::String { value } | WzrdValueType::Expression { value } => {
+                ui.label(param_name);
+                ui.horizontal(|ui| {
+                    ui.add(TextEdit::singleline(value));
+                });
+            }
+            _ => {
                 ui.label(param_name);
             }
-            _ => {}
         }
 
         Vec::new()

@@ -124,6 +124,10 @@ impl WzrdNodeGraph {
                                 WzrdValueType::Float { value } => {
                                     format!("{value}")
                                 }
+                                WzrdValueType::Expression { value } => {
+                                    format!("{value}")
+                                }
+                                _ => "".into(),
                             }
                         }
                     })
@@ -158,14 +162,13 @@ impl WzrdNodeGraph {
                 .evaluate_node(id)
                 .unwrap_or("error while calling evaluate node".into());
 
-            if let Some(function_signature) = self.function_stack.pop_back() {
+            if let Some(function_signature) = self.function_stack.back() {
                 let arguments = function_signature.arguments.join(", ");
                 format!(
-                    "
-                    def {:}{:}
-                        {code_body}
-                    end
-                    ",
+                    "def {:}{:}
+    {code_body}
+end
+",
                     function_signature.name,
                     if arguments.is_empty() {
                         String::from("")
@@ -323,9 +326,9 @@ impl WzrdNodeGraph {
                 //is it bad to assume a constant has one input?
                 if let Some(input) = template.inputs.first() {
                     let mut cloned = input.clone();
-                    cloned.initial_value = Some(WzrdValueType::Integer {
+                    cloned.data_type = WzrdValueType::Integer {
                         value: int.value.parse().unwrap_or(0),
-                    });
+                    };
                     template.inputs = vec![cloned];
                 }
                 Some(ParsedWzrdNode {
@@ -353,8 +356,8 @@ impl WzrdNodeGraph {
                 let mut template = WzrdNodes::Variable.node();
                 template.outputs = vec![WzrdType {
                     name: lvar.name.to_string(),
-                    data_type: WzrdNodeDataType::Any,
-                    initial_value: None,
+                    data_type: WzrdValueType::Any,
+                    order: 1,
                 }];
 
                 Some(ParsedWzrdNode {
@@ -374,8 +377,8 @@ impl WzrdNodeGraph {
                 let mut template = WzrdNodes::Output.node();
                 template.inputs = vec![WzrdType {
                     name: "output".to_string(),
-                    data_type: WzrdNodeDataType::Any,
-                    initial_value: None,
+                    data_type: WzrdValueType::Any,
+                    order: 1,
                 }];
 
                 Some(ParsedWzrdNode {
@@ -483,5 +486,19 @@ impl WzrdNodeGraph {
             self.state.ui_rect.width() / 2.0,
             self.state.ui_rect.height() / 2.0,
         );
+    }
+}
+
+impl From<WzrdValueType> for WzrdNodeDataType {
+    fn from(value: WzrdValueType) -> Self {
+        match value {
+            WzrdValueType::String { .. } => WzrdNodeDataType::String,
+            WzrdValueType::Expression { .. } => WzrdNodeDataType::Expression,
+            WzrdValueType::Integer { .. }
+            | WzrdValueType::Float { .. }
+            | WzrdValueType::Number { .. } => WzrdNodeDataType::Number,
+            WzrdValueType::Any => WzrdNodeDataType::Any,
+            // WzrdValueType::None => WzrdNodeDataType::None,
+        }
     }
 }

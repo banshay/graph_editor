@@ -44,6 +44,15 @@ fn main() {
                     end
                                     ",
                     //                     "
+                    // def main(a)
+                    //         return if ("a%2==0") then
+                    //       (5+5)
+                    //     else
+                    //       (48*(11+a))
+                    //     end
+                    //     end
+                    //                     ",
+                    //                     "
                     // def main
                     //    (15*7)
                     //    return (48*(11+20))

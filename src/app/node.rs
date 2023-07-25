@@ -40,6 +40,7 @@ pub enum WzrdNodes {
     Multiply,
     Output,
     Variable,
+    If,
 }
 
 lazy_static! {
@@ -68,13 +69,13 @@ impl WzrdNodes {
                 label: "Constant".into(),
                 inputs: vec![WzrdType {
                     name: "value".into(),
-                    data_type: WzrdNodeDataType::Any,
-                    initial_value: None,
+                    data_type: WzrdValueType::Any,
+                    order: 1,
                 }],
                 outputs: vec![WzrdType {
                     name: "out".into(),
-                    data_type: WzrdNodeDataType::Any,
-                    initial_value: None,
+                    data_type: WzrdValueType::Any,
+                    order: 1,
                 }],
             },
             WzrdNodes::Variable => WzrdNode {
@@ -89,19 +90,19 @@ impl WzrdNodes {
                 inputs: vec![
                     WzrdType {
                         name: "value1".into(),
-                        data_type: WzrdNodeDataType::Any,
-                        initial_value: None,
+                        data_type: WzrdValueType::Number { value: 0 },
+                        order: 1,
                     },
                     WzrdType {
                         name: "value2".into(),
-                        data_type: WzrdNodeDataType::Any,
-                        initial_value: None,
+                        data_type: WzrdValueType::Number { value: 0 },
+                        order: 2,
                     },
                 ],
                 outputs: vec![WzrdType {
                     name: "out".into(),
-                    data_type: WzrdNodeDataType::Any,
-                    initial_value: None,
+                    data_type: WzrdValueType::Any,
+                    order: 1,
                 }],
             },
             WzrdNodes::Multiply => WzrdNode {
@@ -110,19 +111,19 @@ impl WzrdNodes {
                 inputs: vec![
                     WzrdType {
                         name: "value1".into(),
-                        data_type: WzrdNodeDataType::Any,
-                        initial_value: None,
+                        data_type: WzrdValueType::Number { value: 0 },
+                        order: 1,
                     },
                     WzrdType {
                         name: "value2".into(),
-                        data_type: WzrdNodeDataType::Any,
-                        initial_value: None,
+                        data_type: WzrdValueType::Number { value: 0 },
+                        order: 2,
                     },
                 ],
                 outputs: vec![WzrdType {
                     name: "out".into(),
-                    data_type: WzrdNodeDataType::Any,
-                    initial_value: None,
+                    data_type: WzrdValueType::Any,
+                    order: 1,
                 }],
             },
             WzrdNodes::Output => WzrdNode {
@@ -130,6 +131,39 @@ impl WzrdNodes {
                 label: "output".into(),
                 inputs: vec![],
                 outputs: vec![],
+            },
+            WzrdNodes::If => WzrdNode {
+                label: "If".into(),
+                template: Some(
+                    "if ($0) then
+  $1
+else
+  $2
+end"
+                    .into(),
+                ),
+                inputs: vec![
+                    WzrdType {
+                        name: "condition".into(),
+                        data_type: WzrdValueType::Expression { value: "".into() },
+                        order: 1,
+                    },
+                    WzrdType {
+                        name: "then".into(),
+                        data_type: WzrdValueType::Any,
+                        order: 2,
+                    },
+                    WzrdType {
+                        name: "else".into(),
+                        data_type: WzrdValueType::Any,
+                        order: 3,
+                    },
+                ],
+                outputs: vec![WzrdType {
+                    name: "".into(),
+                    data_type: WzrdValueType::Any,
+                    order: 1,
+                }],
             },
         }
     }
@@ -140,6 +174,7 @@ pub fn create_std_nodes() -> Vec<WzrdNode> {
 
     stds.push(WzrdNodes::Add.node());
     stds.push(WzrdNodes::Multiply.node());
+    stds.push(WzrdNodes::If.node());
 
     stds
 }

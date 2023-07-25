@@ -7,8 +7,10 @@ pub struct WzrdNodeTemplates(pub Vec<WzrdNode>);
 #[cfg_attr(feature = "persistence", derive(Serialize, Deserialize))]
 pub struct WzrdType {
     pub name: String,
-    pub data_type: WzrdNodeDataType,
-    pub initial_value: Option<WzrdValueType>,
+    // pub data_type: WzrdNodeDataType,
+    pub data_type: WzrdValueType,
+    pub order: u8,
+    // pub initial_value: Option<WzrdValueType>,
 }
 
 #[derive(Clone, Debug)]
@@ -31,6 +33,9 @@ pub struct WzrdNodeData {
 pub enum WzrdNodeDataType {
     Number,
     Any,
+    String,
+    Expression,
+    None,
 }
 
 #[derive(Clone, Debug)]
@@ -38,8 +43,11 @@ pub enum WzrdNodeDataType {
 pub enum WzrdValueType {
     // Object { value: Option<dyn Any> },
     String { value: String },
+    Expression { value: String },
     Integer { value: i64 },
+    Number { value: i64 },
     Float { value: f64 },
+    Any,
 }
 
 #[derive(Default, Clone)]
