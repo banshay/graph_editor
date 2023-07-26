@@ -134,14 +134,7 @@ impl WzrdNodes {
             },
             WzrdNodes::If => WzrdNode {
                 label: "If".into(),
-                template: Some(
-                    "if ($0) then
-  $1
-else
-  $2
-end"
-                    .into(),
-                ),
+                template: Some("($0) ? $1 : $2".into()),
                 inputs: vec![
                     WzrdType {
                         name: "condition".into(),
