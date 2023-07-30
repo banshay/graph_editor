@@ -38,20 +38,16 @@ fn main() {
                 wzrd_graph.initialize_graph(
                     &mut graph,
                     &mut user_state,
+                    // "
+                    // def main(a)
+                    //    return (48*(11+a))
+                    // end
+                    //                 ",
                     "
                     def main(a)
-                       return (48*(11+a))
+                        return (a%2==0) ? (5+5) : (48*(11+a))
                     end
-                                    ",
-                    //                     "
-                    // def main(a)
-                    //         return if ("a%2==0") then
-                    //       (5+5)
-                    //     else
-                    //       (48*(11+a))
-                    //     end
-                    //     end
-                    //                     ",
+                                        ",
                     //                     "
                     // def main
                     //    (15*7)
